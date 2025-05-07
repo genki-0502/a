@@ -9,7 +9,7 @@ android {
     defaultConfig {
         applicationId = "jp.ac.gifu_u.info.genki.myapplication"
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 30
         versionCode = 1
         versionName = "1.0"
 
