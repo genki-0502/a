@@ -1,102 +1,105 @@
 package jp.ac.gifu_u.info.genki.myapplication;
 
-import android.Manifest;
-import android.annotation.SuppressLint;
-import android.content.Context;
-import android.content.pm.PackageManager;
-import android.location.Location;
-import android.location.LocationListener;
-import android.location.LocationManager;
+import android.net.Uri;
+import android.opengl.EGLConfig;
+import android.opengl.GLSurfaceView;
 import android.os.Bundle;
-import android.widget.Toast;
+import android.widget.FrameLayout;
+import android.widget.MediaController;
+import android.widget.VideoView;
 
-import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
 
-import java.util.Locale;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.FloatBuffer;
 
-public class MainActivity extends AppCompatActivity implements LocationListener {
+import javax.microedition.khronos.opengles.GL10;
 
-    private static final int REQ_LOCATION = 100;
-    private LocationManager locationManager;
+public class MainActivity extends AppCompatActivity {
+
+    /* --- メンバ変数 --- */
+    private VideoView videoView;
+    private GLSurfaceView glView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
 
-        locationManager =
-                (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        /* 1) GLSurfaceView を用意 */
+        glView = new GLSurfaceView(this);
+        glView.setRenderer(new MyRenderer());
+
+        /* 2) VideoView を用意 */
+        videoView = new VideoView(this);
+        videoView.setMediaController(new MediaController(this));
+        // res/raw/sample.mp4 などを置いておく
+        Uri uri = Uri.parse("android.resource://" + getPackageName() + "/" + R.raw.sample);
+        videoView.setVideoURI(uri);
+
+        /* 3) 2 つの View を重ねる */
+        FrameLayout root = new FrameLayout(this);
+        root.addView(videoView,           // 下層に Video
+                new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT));
+        root.addView(glView);             // 上層に OpenGL
+
+        setContentView(root);
     }
 
-    @Override
-    protected void onResume() {
+    @Override protected void onResume() {
         super.onResume();
-        startLocationIfPermitted();
+        glView.onResume();
+        videoView.start();
     }
 
-    @Override
-    protected void onPause() {
+    @Override protected void onPause() {
         super.onPause();
-        if (locationManager != null) {
-            locationManager.removeUpdates(this);    // 省電力のため停止
+        glView.onPause();
+        videoView.pause();
+    }
+
+    /* ----------------- OpenGL Renderer ----------------- */
+    private static class MyRenderer implements GLSurfaceView.Renderer {
+        private int width, height;
+        private FloatBuffer triangle;
+
+        @Override
+        public void onSurfaceCreated(GL10 gl, EGLConfig cfg) {
+            // 頂点データ用意 (一度だけ)
+            triangle = makeBuffer(new float[]{
+                    -0.5f, 0f, 0f,
+                    0.5f, 0f, 0f,
+                    0f,   1f, 0f});
+        }
+
+        @Override
+        public void onSurfaceChanged(GL10 gl, int w, int h) {
+            width = w; height = h;
+        }
+
+        @Override
+        public void onDrawFrame(GL10 gl) {
+            /* ビューポートと射影行列 */
+            gl.glViewport(0, 0, width, height);
+            gl.glMatrixMode(GL10.GL_PROJECTION);
+            gl.glLoadIdentity();
+            gl.glOrthof(-1f, 1f, -1f, 1f, 2f, -2f);
+
+            gl.glClear(GL10.GL_COLOR_BUFFER_BIT);
+            gl.glColor4f(1f, 1f, 1f, 1f);
+
+            /* 頂点配列を有効化 → ポインタ設定 → 描画 */
+            gl.glEnableClientState(GL10.GL_VERTEX_ARRAY);
+            gl.glVertexPointer(3, GL10.GL_FLOAT, 0, triangle);
+            gl.glDrawArrays(GL10.GL_TRIANGLES, 0, 3);
+            gl.glDisableClientState(GL10.GL_VERTEX_ARRAY);
+        }
+
+        private static FloatBuffer makeBuffer(float[] v) {
+            ByteBuffer bb = ByteBuffer.allocateDirect(v.length * 4).order(ByteOrder.nativeOrder());
+            return bb.asFloatBuffer().put(v).position(0), bb.asFloatBuffer();
         }
     }
-
-    /* ---------- 位置情報取得 ---------- */
-
-    private void startLocationIfPermitted() {
-        if (ActivityCompat.checkSelfPermission(
-                this, Manifest.permission.ACCESS_FINE_LOCATION)
-                != PackageManager.PERMISSION_GRANTED) {
-
-            ActivityCompat.requestPermissions(
-                    this,
-                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
-                    REQ_LOCATION);
-            return;
-        }
-        requestLocationUpdates();
-    }
-
-    @SuppressLint("MissingPermission")   // ここは上で許可確認済み
-    private void requestLocationUpdates() {
-        // 1000 ms または 10 m ごとに GPS 更新
-        locationManager.requestLocationUpdates(
-                LocationManager.GPS_PROVIDER,
-                1000,
-                10,
-                this);
-    }
-
-    /* ---------- パーミッション結果 ---------- */
-
-    @Override
-    public void onRequestPermissionsResult(
-            int requestCode, @NonNull String[] perms, @NonNull int[] results) {
-
-        super.onRequestPermissionsResult(requestCode, perms, results);
-        if (requestCode == REQ_LOCATION &&
-                results.length > 0 &&
-                results[0] == PackageManager.PERMISSION_GRANTED) {
-            requestLocationUpdates();
-        }
-    }
-
-    /* ---------- LocationListener 実装 ---------- */
-
-    @Override
-    public void onLocationChanged(@NonNull Location location) {
-        double lat = location.getLatitude();
-        double lng = location.getLongitude();
-        Toast.makeText(this,
-                String.format(Locale.US, "%.3f  %.3f", lat, lng),
-                Toast.LENGTH_SHORT).show();
-    }
-
-    // 以下３メソッドは API 33 以前の互換用に空実装
-    @Override public void onProviderEnabled(@NonNull String provider) {}
-    @Override public void onProviderDisabled(@NonNull String provider) {}
-    @Override public void onStatusChanged(String p, int s, Bundle b) {}
 }
